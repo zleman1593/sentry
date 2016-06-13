@@ -1,0 +1,61 @@
+{% extends "sentry/emails/base.html" %}
+
+{% load sentry_helpers %}
+
+{% block bodyclass %}weekly-report{% endblock %}
+
+{% block header %}
+  {{ block.super }}
+  <div>
+    Weekly Update for {{ organization.name }}<br />
+    {# Note: This assumes we're always sending email on day boundaries. #}
+    {{ interval.start|date:"F j, Y" }} &ndash; {{ interval.end|date:"F j, Y" }}
+  </div>
+{% endblock %}
+
+{% block content %}
+
+Errors Resolved in the Past Week
+
+<ol>
+  {% for date, metrics in resolutions.series.iteritems %}
+    <li>{{ date }}: {{ metrics.resolved }} resolved issues of {{ metrics.total }} total issues</li>
+  {% endfor %}
+</ol>
+
+{% with resolutions.comparisons as change %}
+    {{ change.weekly|absolute_value|floatformat:"0" }}% {% if change.weekly >= 0 %}more{% else %}less{% endif %} resolved than last week
+    {{ change.monthly|absolute_value|floatformat:"0" }}% {% if change.monthly >= 0 %}more{% else %}less{% endif %} issues resolved than last month's average
+{% endwith %}
+
+{% for label, groups in group_lists.iteritems %}
+  <table>
+    <thead>
+      <tr>
+        <th>{{ label }}</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group, statistics in groups %}
+        <tr>
+          <td>
+              {{ group }}
+              {{ statistics.count }} times total by
+              {{ statistics.users }} users
+          </td>
+          <td>{{ group.get_status_display }}</td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="2">
+            {# TODO: This is probably not the best way to articulate this. #}
+            There were no groups this period.
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+
+{% endblock %}

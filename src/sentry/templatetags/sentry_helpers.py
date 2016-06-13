@@ -103,6 +103,11 @@ def subtract(value, amount):
 
 
 @register.filter
+def absolute_value(value):
+    return abs(int(value) if isinstance(value, (int, long)) else float(value))
+
+
+@register.filter
 def has_charts(group):
     from sentry.utils.db import has_charts
     if hasattr(group, '_state'):

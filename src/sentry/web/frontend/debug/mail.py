@@ -5,6 +5,7 @@ import logging
 import time
 import traceback
 import uuid
+from collections import OrderedDict
 from datetime import (
     datetime,
     timedelta,
@@ -241,6 +242,16 @@ def assigned(request):
     ).render()
 
 
+def make_message(random):
+    return words(int(random.weibullvariate(8, 4)), common=False)
+
+def make_culprit(random):
+    return '{module} in {function}'.format(
+        module='.'.join(''.join(random.sample(WORDS, random.randint(1, int(random.paretovariate(2.2))))) for word in xrange(1, 4)),
+        function=random.choice(WORDS)
+    )
+
+
 @login_required
 def digest(request):
     seed = request.GET.get('seed', str(time.time()))
@@ -293,17 +304,11 @@ def digest(request):
     for i in xrange(random.randint(1, 30)):
         group_id = next(group_sequence)
 
-        culprit = '{module} in {function}'.format(
-            module='.'.join(
-                ''.join(random.sample(WORDS, random.randint(1, int(random.paretovariate(2.2))))) for word in xrange(1, 4)
-            ),
-            function=random.choice(WORDS)
-        )
         group = state['groups'][group_id] = Group(
             id=group_id,
             project=project,
-            message=words(int(random.weibullvariate(8, 4)), common=False),
-            culprit=culprit,
+            message=make_message(random),
+            culprit=make_culprit(random),
             level=random.choice(LOG_LEVELS.keys()),
         )
 
@@ -346,6 +351,99 @@ def digest(request):
             'digest': digest,
             'start': start,
             'end': end,
+        },
+    ).render()
+
+
+@login_required
+def weekly_report(request):
+    seed = request.GET.get('seed', str(time.time()))
+    logger.debug('Using random seed value: %s')
+    random = Random(seed)
+
+    # TODO: Refactor all of these into something more manageable.
+    organization  = Organization(
+        id=1,
+        slug='example',
+        name='Example Organization',
+    )
+
+    team = Team(
+        id=1,
+        slug='example',
+        name='Example Team',
+        organization=organization,
+    )
+
+    project = Project(
+        id=1,
+        slug='example',
+        name='Example Project',
+        team=team,
+        organization=organization,
+    )
+
+    def truncate_to_day(datetime):
+        return datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    days = 7
+    end = truncate_to_day(datetime.now())
+    start = end - timedelta(days=days)
+
+    group_id_sequence = itertools.count(1)
+
+    def make_group_statistics():
+        users = random.randint(0, 2500) if random.random() < 0.8 else 0
+        count = int(users * max(1, random.paretovariate(2.2)))
+        if count < 1:
+            count = random.randint(0, 2500)
+        return {
+            'users': users,
+            'count': count,
+        }
+
+    def make_group_list(maximum):
+        for i in xrange(0, random.randint(0, maximum)):
+            yield Group(
+                id=id,
+                project=project,
+                message=make_message(random),
+                culprit=make_culprit(random),
+                level=random.choice(LOG_LEVELS.keys()),
+            ), make_group_statistics()
+
+    group_lists = OrderedDict((
+        ('New groups', make_group_list(5)),
+        ('Reintroduced groups', make_group_list(5)),
+        ('Most Seen Overall', make_group_list(5)),
+    ))
+
+    def make_series_metric():
+        total = random.randint(0, 1e6)
+        return {
+            'resolved': int(total * random.random()),
+            'total': total,
+        }
+
+    return MailPreview(
+        html_template='sentry/emails/weekly-report/body.html',
+        text_template='sentry/emails/weekly-report/body.txt',
+        context={
+            'organization': organization,
+            'interval': {
+                'start': start,
+                'end': end,
+            },
+            'group_lists': group_lists,
+            'resolutions': {
+                'series': OrderedDict([
+                    (start + timedelta(days=i), make_series_metric()) for i in xrange(0, days)
+                ]),
+                'comparisons': {
+                    'weekly': random.uniform(-2500, 2500),
+                    'monthly': random.uniform(-2500, 2500),
+                },
+            }
         },
     ).render()
 
