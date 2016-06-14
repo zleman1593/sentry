@@ -14,10 +14,7 @@ from random import Random
 
 import pytz
 
-from django.contrib.webdesign.lorem_ipsum import (
-    WORDS,
-    words,
-)
+from django.contrib.webdesign.lorem_ipsum import WORDS
 from django.core.urlresolvers import reverse
 from django.utils.safestring import mark_safe
 
@@ -243,7 +240,7 @@ def assigned(request):
 
 
 def make_message(random):
-    return words(int(random.weibullvariate(8, 4)), common=False)
+    return ' '.join(random.sample(WORDS, (int(random.weibullvariate(8, 4)))))
 
 def make_culprit(random):
     return '{module} in {function}'.format(
