@@ -91,7 +91,7 @@ def prepare_project_report(project, end, period):
     """
     Calculate report data for a project.
     """
-    queryset = Group.objects.filter(project=project)
+    queryset = Group.objects.filter(project=project).exclude(status=GroupStatus.MUTED)
 
     start = end - period
 
