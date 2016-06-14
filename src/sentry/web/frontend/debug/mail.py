@@ -424,6 +424,10 @@ def weekly_report(request):
             'total': total,
         }
 
+    series = OrderedDict([
+        (start + timedelta(days=i), make_series_metric()) for i in xrange(0, days)
+    ])
+
     return MailPreview(
         html_template='sentry/emails/weekly-report/body.html',
         text_template='sentry/emails/weekly-report/body.txt',
@@ -435,9 +439,8 @@ def weekly_report(request):
             },
             'group_lists': group_lists,
             'resolutions': {
-                'series': OrderedDict([
-                    (start + timedelta(days=i), make_series_metric()) for i in xrange(0, days)
-                ]),
+                'series': series,
+                'total_max': max(point['total'] for point in series.values()),
                 'comparisons': {
                     'weekly': random.uniform(-2500, 2500),
                     'monthly': random.uniform(-2500, 2500),
