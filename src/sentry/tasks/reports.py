@@ -152,6 +152,7 @@ def prepare_and_deliver_report_to_user(organization_id, user_id, end, period):
     """
     # Fetch all of the statistics for the projects that this user is associated with.
     # Combine all of the statistics (series data and issue lists.)
+    # TODO: This needs to handle the case where there are no issues to display in the list.
 
     # Fetch the issues that this user has resolved during the period.
     # Fetch the statistics for those issues (users affected, etc.)
