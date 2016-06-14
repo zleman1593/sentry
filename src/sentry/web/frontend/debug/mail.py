@@ -29,6 +29,7 @@ from sentry.models import (
     Activity,
     Event,
     Group,
+    GroupStatus,
     Organization,
     OrganizationMember,
     Project,
@@ -407,6 +408,7 @@ def weekly_report(request):
                 message=make_message(random),
                 culprit=make_culprit(random),
                 level=random.choice(LOG_LEVELS.keys()),
+                status=random.choice((GroupStatus.RESOLVED, GroupStatus.UNRESOLVED)),
             ), make_group_statistics()
 
     group_lists = OrderedDict((
