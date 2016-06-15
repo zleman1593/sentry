@@ -240,9 +240,20 @@ def merge_issue_lists(key, target, other):
     )
 
 
+def merge_series_statistics(target, other):
+    return ReportSeriesStatistics(
+        target.resolved + other.resolved,
+        target.total + other.total,
+    )
+
+
 def merge_reports(aggregate, report):
     return Report(
-        [],  # TODO
+        merge_series(
+            aggregate.series,
+            report.series,
+            merge_series_statistics,
+        ),
         merge_mappings(
             aggregate.issues,
             report.issues,
