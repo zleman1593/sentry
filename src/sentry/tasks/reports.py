@@ -80,7 +80,7 @@ def prepare_issue_list(queryset, start, end, specification):
         results.append((issue_id, statistics, specification.score(statistics)))
 
     # Truncate the groups to the limit.
-    return sorted(
+    return len(issue_id_list), sorted(
         results,
         key=lambda (issue, statistics, score): score,
         reverse=True,
