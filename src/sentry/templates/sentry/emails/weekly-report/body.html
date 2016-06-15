@@ -48,10 +48,10 @@
             <td valign="bottom" style="padding-right: 5px;">
               <table class="issue-graph-bar">
                 <tr>
-                  <td class="all" height="{% widthratio metrics_difference resolutions.total_max 60 %}px" title="{{metrics_difference}}">&nbsp;</td>
+                  <td class="all" height="{% widthratio metrics_difference resolutions.total_max 56 %}px" title="{{metrics_difference}}">&nbsp;</td>
                 </tr>
                 <tr>
-                  <td class="resolved" height="{% widthratio metrics.resolved resolutions.total_max 60 %}px" title="{{metrics.resolved}}">&nbsp;</td>
+                  <td class="resolved" height="{% widthratio metrics.resolved resolutions.total_max 56 %}px" title="{{metrics.resolved}}">&nbsp;</td>
                 </tr>
               </table>
             </td>
@@ -115,5 +115,38 @@
       </tbody>
     </table>
   {% endfor %}
+
+  <h4>Your impact</h4>
+  <table class="user-impact">
+    <tr>
+      <td width="50%">
+        <table>
+          <tr>
+            <td class="user-impact-stat">25</td>
+            <td class="user-impact-text">Issues you resolved this week.</td>
+          </tr>
+        </table>
+      </td>
+      <td width="50%">
+        <table>
+          <tr>
+            <td class="user-impact-stat">12</td>
+            <td class="user-impact-text">Users rejoicing because of it.</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <div class="unsubscribe-box">
+    Not enjoying these? <a>Click to unsubscribe</a>.
+  </div>
+</div>
+<div class="footer">
+  <div class="container">
+    <a href="{% absolute_uri %}" style="float:right">Home</a>
+    {% url 'sentry-account-settings-notifications' as settings_link %}
+    <a href="{% absolute_uri settings_link %}">Notification Settings</a>
+  </div>
 </div>
 {% endblock %}
