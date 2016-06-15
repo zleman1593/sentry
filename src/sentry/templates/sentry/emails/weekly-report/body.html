@@ -79,7 +79,9 @@
           <th>
             <h4>{{ label }}</h4>
           </th>
-          <th class="status-column">Status</th>
+          <th class="narrow-column">Events</th>
+          <th class="narrow-column">Users</th>
+          <th class="narrow-column">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -89,12 +91,11 @@
               <h5><a>{{ group }}</a></h5>
               <div class="issue-meta">
                 <a class="issue-project">Project Name</a>
-                Seen
-                {{ statistics.count }} times total by
-                {{ statistics.users }} users
               </div>
             </td>
-            <td class="status-column">
+            <td class="narrow-column">{{ statistics.count }}</td>
+            <td class="narrow-column">{{ statistics.users }}</td>
+            <td class="narrow-column">
               {# TODO: Perhaps figure this out on the backend? #}
               {% if group.is_resolved %}
                 <img src="{% absolute_asset_url 'sentry' 'images/email/check.png' %}" width="20px" height="20px" alt="Resolved">
@@ -105,7 +106,7 @@
           </tr>
         {% empty %}
           <tr>
-            <td class="empty" colspan="2">
+            <td class="empty" colspan="4">
               {# TODO: This is probably not the best way to articulate this. #}
               There were no issues this period.
             </td>
