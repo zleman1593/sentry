@@ -1,3 +1,4 @@
+import operator
 import logging
 from collections import OrderedDict, namedtuple
 from django.db.models import Q
@@ -8,16 +9,15 @@ from sentry.app import tsdb
 logger = logging.getLogger(__name__)
 
 
-IssueListSpecification = namedtuple(
-    'IssueListSpecification',
-    ('label', 'filter_factory', 'limit', 'score'),
+ReportSpecification = namedtuple(
+    'ReportSpecification',
+    ('label', 'filter_factory', 'limit', 'score_function'),
 )
 
-
-IssueStatistics = namedtuple(
-    'IssueStatistics',
-    ('occurences', 'users'),
-)
+IssueStatistics = namedtuple('IssueStatistics', ('occurences', 'users'))
+Issue = namedtuple('Issue', ('id', 'statistics', 'score'))
+IssueList = namedtuple('IssueList', ('count', 'issues'))
+Report = namedtuple('Report', ('series', 'issues'))
 
 
 def simple_issue_score(statistics):
@@ -25,17 +25,17 @@ def simple_issue_score(statistics):
     return statistics.occurences
 
 
-issue_list_specifications = OrderedDict((
-    ('new', IssueListSpecification(
+report_specifications = OrderedDict((
+    ('new', ReportSpecification(
         'New groups',
         lambda start, end: Q(
             first_seen__gte=start,
             first_seen__lt=end,
         ),
         limit=5,
-        score=simple_issue_score,
+        score_function=simple_issue_score,
     )),
-    ('reopened', IssueListSpecification(
+    ('reopened', ReportSpecification(
         'Reopened groups',
         lambda start, end: Q(
             status=GroupStatus.UNRESOLVED,
@@ -43,16 +43,16 @@ issue_list_specifications = OrderedDict((
             resolved_at__lt=end,
         ),  # TODO: Is this safe?
         limit=5,
-        score=simple_issue_score,
+        score_function=simple_issue_score,
     )),
-    ('most-seen', IssueListSpecification(
+    ('most-seen', ReportSpecification(
         'Most seen groups',
         lambda start, end: Q(
             last_seen__gte=start,
             last_seen__lt=end,
         ),  # XXX: This might be very large, it might make sense to start sketching this?
         limit=5,
-        score=simple_issue_score,
+        score_function=simple_issue_score,
     )),
 ))
 
@@ -77,14 +77,23 @@ def prepare_issue_list(queryset, start, end, specification):
             issue_occurrences.get(issue_id, 0),
             issue_users.get(issue_id, 0),
         )
-        results.append((issue_id, statistics, specification.score(statistics)))
+        results.append(
+            Issue(
+                issue_id,
+                statistics,
+                specification.score_function(statistics)
+            )
+        )
 
     # Truncate the groups to the limit.
-    return len(issue_id_list), sorted(
-        results,
-        key=lambda (issue, statistics, score): score,
-        reverse=True,
-    )[:specification.limit]
+    return IssueList(
+        len(issue_id_list),
+        sorted(
+            results,
+            key=operator.attrgetter('score'),
+            reverse=True,
+        )[:specification.limit],
+    )
 
 
 def prepare_project_report(project, end, period):
@@ -112,11 +121,14 @@ def prepare_project_report(project, end, period):
 
     # Fetch all of the groups for each query.
     issue_lists = {}
-    for key, specification in issue_list_specifications.iteritems():
+    for key, specification in report_specifications.iteritems():
         issue_lists[key] = prepare_issue_list(queryset, start, end, specification)
 
     # Return the series data, and issue lists.
-    return series, issue_lists
+    return Report(
+        series,
+        issue_lists,
+    )
 
 
 def prepare_reports_for_organization(organization_id, end, period):
@@ -166,6 +178,60 @@ def prepare_user_report(organization, user, start, end):
     )
 
     return resolved_issue_ids, users_affected
+
+
+def merge_mappings(target, other, function=None, keys=None):
+    # TODO: Support updating in place, this creates a lot of garbage.
+    unset = object()
+
+    if keys is None:
+        keys = set(target.keys()) | set(other.keys())
+
+    if function is None:
+        function = lambda key, a, b: a + b
+
+    results = {}
+    for key in keys:
+        a = target.get(key, unset)
+        b = other.get(key, unset)
+        if a is unset:
+            assert b is not unset
+            results[key] = b
+        elif b is unset:
+            assert a is not unset
+            results[key] = a
+        else:
+            results[key] = function(key, a, b)
+
+    return results
+
+
+def merge_issue_lists(key, target, other):
+    # NOTE: This makes the assumption that the members of the ``target`` and
+    # ``other`` issue lists are mutually exclusive (the same ``issue.id``
+    # doesn't show up in both lists.)
+    specification = report_specifications[key]
+    count = target[0] + other[0]
+    return IssueList(
+        count,
+        sorted(
+            target[1] + other[1],
+            key=operator.attrgetter('score'),
+            reverse=True,
+        )[:specification.limit],
+    )
+
+
+def merge_reports(aggregate, report):
+    return Report(
+        [],  # TODO
+        merge_mappings(
+            aggregate.issues,
+            report.issues,
+            merge_issue_lists,
+            report_specifications.keys(),
+        ),
+    )
 
 
 def prepare_and_deliver_report_to_user(organization_id, user_id, end, period):
