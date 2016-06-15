@@ -63,7 +63,7 @@ report_specifications = OrderedDict((
 
 
 # TODO: Probably refactor this into a instance method on ``specification``?
-def prepare_issue_list(queryset, start, end, specification):
+def prepare_issue_list(queryset, start, end, specification, rollup):
     # Fetch all of the groups IDs that meet this constraint.
     # TODO: This join and sort should be chunked out and performed
     # incrementally to avoid potentially consuming a lot of memory. We should
@@ -71,9 +71,8 @@ def prepare_issue_list(queryset, start, end, specification):
     issue_id_list = queryset.filter(specification.filter_factory(start, end)).values_list('id', flat=True)
 
     # Join them against the group statistics.
-    # TODO: These need to explicitly set the rollup resolution.
-    issue_occurrences = tsdb.get_sums(tsdb.models.group, issue_id_list, start, end)
-    issue_users = tsdb.get_distinct_counts_totals(tsdb.models.users_affected_by_group, issue_id_list, start, end)
+    issue_occurrences = tsdb.get_sums(tsdb.models.group, issue_id_list, start, end, rollup)
+    issue_users = tsdb.get_distinct_counts_totals(tsdb.models.users_affected_by_group, issue_id_list, start, end, rollup)
 
     # Score the groups, and sort them by score.
     results = []
@@ -111,7 +110,7 @@ def merge_series(target, other, function=operator.add):
     return result
 
 
-def prepare_project_series(project, queryset, start, end, rollup=60 * 60 * 24):
+def prepare_project_series(project, queryset, start, end, rollup):
     # Fetch the resolved issues.
     resolved_issue_ids = queryset.filter(
         status=GroupStatus.RESOLVED,
@@ -160,15 +159,16 @@ def prepare_project_report(project, end, period):
     queryset = Group.objects.filter(project=project).exclude(status=GroupStatus.MUTED)
 
     start = end - period
+    rollup = int(period.total_seconds() / 7)
 
     # Fetch all of the groups for each query.
     issue_lists = {}
     for key, specification in report_specifications.iteritems():
-        issue_lists[key] = prepare_issue_list(queryset, start, end, specification)
+        issue_lists[key] = prepare_issue_list(queryset, start, end, specification, rollup)
 
     # Return the series data, and issue lists.
     return Report(
-        prepare_project_series(project, queryset, start, end),
+        prepare_project_series(project, queryset, start, end, rollup),
         issue_lists,
     )
 
@@ -263,7 +263,7 @@ def merge_reports(aggregate, report):
     )
 
 
-def prepare_user_report(organization, user, start, end):
+def prepare_user_report(organization, user, start, end, rollup):
     resolved_issue_ids = Activity.objects.filter(
         project__organization_id=organization.id,
         user_id=user.id,
@@ -283,6 +283,7 @@ def prepare_user_report(organization, user, start, end):
             resolved_issue_ids,
             start,
             end,
+            rollup,
         )
     )
 
