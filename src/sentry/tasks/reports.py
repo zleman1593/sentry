@@ -61,6 +61,15 @@ report_specifications = OrderedDict((
     )),
 ))
 
+# TODO: Probably refactor this into a instance method on ``specification``?
+def sort_issues(specification, issue_list):
+    """Sort and truncate issue list based on specification."""
+    return sorted(
+        issue_list,
+        key=operator.attrgetter('score'),
+        reverse=True,
+    )[:specification.limit]
+
 
 # TODO: Probably refactor this into a instance method on ``specification``?
 def prepare_issue_list(queryset, start, end, specification, rollup):
@@ -75,13 +84,13 @@ def prepare_issue_list(queryset, start, end, specification, rollup):
     issue_users = tsdb.get_distinct_counts_totals(tsdb.models.users_affected_by_group, issue_id_list, start, end, rollup)
 
     # Score the groups, and sort them by score.
-    results = []
+    issue_list = []
     for issue_id in issue_id_list:
         statistics = IssueStatistics(
             issue_occurrences.get(issue_id, 0),
             issue_users.get(issue_id, 0),
         )
-        results.append(
+        issue_list.append(
             Issue(
                 issue_id,
                 statistics,
@@ -89,14 +98,9 @@ def prepare_issue_list(queryset, start, end, specification, rollup):
             )
         )
 
-    # Truncate the groups to the limit.
     return IssueList(
         len(issue_id_list),
-        sorted(
-            results,
-            key=operator.attrgetter('score'),
-            reverse=True,
-        )[:specification.limit],
+        sort_issues(specification, issue_list),
     )
 
 
@@ -232,11 +236,7 @@ def merge_issue_lists(key, target, other):
     specification = report_specifications[key]
     return IssueList(
         target.count + other.count,
-        sorted(
-            target.issues + other.issues,
-            key=operator.attrgetter('score'),
-            reverse=True,
-        )[:specification.limit],
+        sort_issues(specification, target.issues + other.issues),
     )
 
 
