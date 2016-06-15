@@ -1,7 +1,7 @@
 import logging
 from collections import OrderedDict, namedtuple
 from django.db.models import Q
-from sentry.models import Group, GroupStatus, Organization
+from sentry.models import Activity, Group, GroupStatus, Organization
 from sentry.app import tsdb
 
 
@@ -143,6 +143,29 @@ def prepare_reports_for_organization(organization_id, end, period):
 
     # Enqueue the delivery task for each (organization, user) pair.
     raise NotImplementedError
+
+
+def prepare_user_report(organization, user, start, end):
+    resolved_issue_ids = Activity.objects.filter(
+        project__organization_id=organization.id,
+        user_id=user.id,
+        type__in=(
+            Activity.SET_RESOLVED,
+            Activity.SET_RESOLVED_IN_RELEASE,
+        ),
+        datetime__gte=start,
+        datetime__lt=end,
+        group__status=GroupStatus.RESOLVED,  # only count if the issue is still resolved
+    ).values_list('group_id', flat=True)
+
+    users_affected = tsdb.get_distinct_counts_union(
+        tsdb.models.users_affected_by_group,
+        resolved_issue_ids,
+        start,
+        end,
+    )
+
+    return resolved_issue_ids, users_affected
 
 
 def prepare_and_deliver_report_to_user(organization_id, user_id, end, period):

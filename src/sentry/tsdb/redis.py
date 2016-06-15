@@ -9,6 +9,8 @@ from __future__ import absolute_import
 
 import logging
 import operator
+import random
+import uuid
 from binascii import crc32
 from collections import defaultdict, namedtuple
 from datetime import timedelta
@@ -290,6 +292,53 @@ class RedisTSDB(BaseTSDB):
                 responses[key] = client.target_key(key).execute_command('PFCOUNT', *ks)
 
         return {key: value.value for key, value in responses.iteritems()}
+
+    def get_distinct_counts_union(self, model, keys, start, end=None, rollup=None):
+        rollup, series = self.get_optimal_rollup_series(start, end, rollup)
+
+        router = self.cluster.get_router()
+
+        # Identify which keys exist on which hosts.
+        hosts = defaultdict(set)
+        for key in keys:
+            hosts[router.get_host_for_key(key)].add(key)
+
+        temporary_id = uuid.uuid1().hex
+
+        def make_key(key):
+            return '{}{}:{}'.format(self.prefix, temporary_id, key)
+
+        def expand_key(key):
+            return [self.make_key(model, rollup, timestamp, key) for timestamp in series]
+
+        def chain(iterables):
+            return reduce(
+                operator.add,
+                iterables,
+                [],
+            )
+
+        def get_partition_aggregate((host, keys)):
+            destination = make_key('p:{}'.format(host))
+            client = self.cluster.get_local_client(host)
+            with client.pipeline(transaction=False) as pipeline:
+                pipeline.execute_command('PFMERGE', destination, *chain(map(expand_key, keys)))
+                pipeline.get(destination)
+                pipeline.delete(destination)
+                return pipeline.execute()[1]
+
+        def merge_aggregates(aggregates):
+            destination = make_key('a')
+            aggregates = {make_key('a:{}'.format(i)): value for i, value in enumerate(aggregates)}
+            client = self.cluster.get_local_client(random.choice(self.cluster.hosts.keys()))
+            with client.pipeline(transaction=False) as pipeline:
+                pipeline.mset(aggregates)
+                pipeline.execute_command('PFMERGE', destination, *aggregates.keys())
+                pipeline.execute_command('PFCOUNT', destination)
+                pipeline.delete(destination, *aggregates.keys())
+                return pipeline.execute()[2]
+
+        return merge_aggregates(map(get_partition_aggregate, hosts.items()))
 
     def make_frequency_table_keys(self, model, rollup, timestamp, key):
         prefix = self.make_key(model, rollup, timestamp, key)
