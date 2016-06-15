@@ -100,7 +100,7 @@
       </thead>
       <tbody>
         {% for group, statistics in groups %}
-          <tr>
+          <tr {% if group.is_resolved %}class="is-resolved"{% endif %}>
             <td>
               <h5><a href="{% absolute_uri group_link %}">{{ group }}</a></h5>
               <div class="issue-meta">
