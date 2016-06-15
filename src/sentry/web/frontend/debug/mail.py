@@ -445,7 +445,11 @@ def weekly_report(request):
                     'weekly': random.uniform(-2500, 2500),
                     'monthly': random.uniform(-2500, 2500),
                 },
-            }
+            },
+            'personal': {
+                'resolutions': random.randint(0, 250),
+                'users': int(random.paretovariate(0.2)) if random.random() < 0.9 else 0,
+            },
         },
     ).render()
 
