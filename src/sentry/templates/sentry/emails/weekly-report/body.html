@@ -136,16 +136,16 @@
       <td width="50%">
         <table>
           <tr>
-            <td class="user-impact-stat">25</td>
-            <td class="user-impact-text">Issues you resolved this week.</td>
+            <td class="user-impact-stat">{{ personal.resolutions }}</td>
+            <td class="user-impact-text">Issue{{ personal.resolutions|pluralize }} resolved this week by you.</td>
           </tr>
         </table>
       </td>
       <td width="50%">
         <table>
           <tr>
-            <td class="user-impact-stat">12</td>
-            <td class="user-impact-text">Users rejoicing because of it.</td>
+            <td class="user-impact-stat">{{ personal.users }}</td>
+            <td class="user-impact-text">User{{ personal.users|pluralize }} rejoicing because of it.</td>
           </tr>
         </table>
       </td>
