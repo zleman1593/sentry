@@ -1,61 +1,118 @@
 {% extends "sentry/emails/base.html" %}
 
 {% load sentry_helpers %}
+{% load sentry_assets %}
 
 {% block bodyclass %}weekly-report{% endblock %}
 
 {% block header %}
-  {{ block.super }}
-  <div>
-    Weekly Update for {{ organization.name }}<br />
-    {# Note: This assumes we're always sending email on day boundaries. #}
-    {{ interval.start|date:"F j, Y" }} &ndash; {{ interval.end|date:"F j, Y" }}
-  </div>
+  <table>
+    <tr>
+      <td width="125px">
+        <h1>
+          <a href="{% absolute_uri %}"><img src="{% absolute_asset_url 'sentry' 'images/email/sentry_logo_full.png' %}" width="125px" height="29px" alt="Sentry"></a>
+        </h1>
+      </td>
+      <td class="align-right">
+        <strong>Weekly Update for {{ organization.name }}</strong><br />
+        {# Note: This assumes we're always sending email on day boundaries. #}
+        {{ interval.start|date:"F j, Y" }} &ndash; {{ interval.end|date:"F j, Y" }}
+      </td>
+    </tr>
+  </table>
 {% endblock %}
 
 {% block content %}
 
-Errors Resolved in the Past Week
-
-<ol>
-  {% for date, metrics in resolutions.series.iteritems %}
-    <li>{{ date }}: {{ metrics.resolved }} resolved issues of {{ metrics.total }} total issues</li>
-  {% endfor %}
-</ol>
-
-{% with resolutions.comparisons as change %}
-    {{ change.weekly|absolute_value|floatformat:"0" }}% {% if change.weekly >= 0 %}more{% else %}less{% endif %} resolved than last week
-    {{ change.monthly|absolute_value|floatformat:"0" }}% {% if change.monthly >= 0 %}more{% else %}less{% endif %} issues resolved than last month's average
-{% endwith %}
-
-{% for label, groups in group_lists.iteritems %}
-  <table>
-    <thead>
-      <tr>
-        <th>{{ label }}</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for group, statistics in groups %}
-        <tr>
-          <td>
-              {{ group }}
-              {{ statistics.count }} times total by
-              {{ statistics.users }} users
-          </td>
-          <td>{{ group.get_status_display }}</td>
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="2">
-            {# TODO: This is probably not the best way to articulate this. #}
-            There were no groups this period.
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
+<div class="container">
+  <table style="margin-bottom: 10px">
+    <tr>
+      <td>
+        <h4>Issues resolved in the past week</h4>
+      </td>
+      <td class="legend">
+        <span class="all">&nbsp;</span> All
+        <span class="resolved">&nbsp;</span> Resolved
+      </td>
+    </tr>
   </table>
-{% endfor %}
 
+  {% with resolutions.comparisons as change %}
+  <table class="issues-resolved">
+    <tr>
+      <td class="issues-resolved-column issues-resolved-column-left">
+        <table class="issue-graph">
+          <tr>
+          {% for date, metrics in resolutions.series.iteritems %}
+            {% with metrics.total|subtract:metrics.resolved as metrics_difference %}
+            <td valign="bottom" style="padding-right: 5px;">
+              <table class="issue-graph-bar">
+                <tr>
+                  <td class="all" height="{% widthratio metrics_difference resolutions.total_max 60 %}px" title="{{metrics_difference}}">&nbsp;</td>
+                </tr>
+                <tr>
+                  <td class="resolved" height="{% widthratio metrics.resolved resolutions.total_max 60 %}px" title="{{metrics.resolved}}">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+            {% endwith %}
+          {% endfor %}
+          </tr>
+        </table>
+      </td>
+      <td class="issues-resolved-column issues-resolved-column-middle">
+        <div class="stat">{{ change.weekly|absolute_value|floatformat:"0" }}%</div>
+        <small>{% if change.weekly >= 0 %}more{% else %}less{% endif %} than last week</small>
+      </td>
+      <td class="issues-resolved-column">
+        <div class="stat">{{ change.monthly|absolute_value|floatformat:"0" }}%</div>
+        <small>{% if change.monthly >= 0 %}more{% else %}less{% endif %} than last month's average</small>
+      </td>
+    </tr>
+  </table>
+  {% endwith %}
+
+  {% for label, groups in group_lists.iteritems %}
+    <table class="issue-table">
+      <thead>
+        <tr>
+          <th>
+            <h4>{{ label }}</h4>
+          </th>
+          <th class="status-column">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for group, statistics in groups %}
+          <tr>
+            <td>
+              <h5><a>{{ group }}</a></h5>
+              <div class="issue-meta">
+                <a class="issue-project">Project Name</a>
+                Seen
+                {{ statistics.count }} times total by
+                {{ statistics.users }} users
+              </div>
+            </td>
+            <td class="status-column">
+              {# TODO: Perhaps figure this out on the backend? #}
+              {% if group.is_resolved %}
+                <img src="{% absolute_asset_url 'sentry' 'images/email/check.png' %}" width="20px" height="20px" alt="Resolved">
+              {% else %}
+                <img src="{% absolute_asset_url 'sentry' 'images/email/x.png' %}" width="20px" height="20px" alt="Unresolved">
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td class="empty" colspan="2">
+              {# TODO: This is probably not the best way to articulate this. #}
+              There were no issues this period.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+</div>
 {% endblock %}

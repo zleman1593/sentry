@@ -412,8 +412,8 @@ def weekly_report(request):
             ), make_group_statistics()
 
     group_lists = OrderedDict((
-        ('New groups', make_group_list(5)),
-        ('Reintroduced groups', make_group_list(5)),
+        ('New Issues', make_group_list(5)),
+        ('Reintroduced Issues', make_group_list(5)),
         ('Most Seen Overall', make_group_list(5)),
     ))
 
