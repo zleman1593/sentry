@@ -110,6 +110,12 @@ def merge_series(target, other, function=operator.add):
     return result
 
 
+def get_series_value(series, index, reference_timestamp):
+    timestamp, value = series[index]
+    assert timestamp == reference_timestamp, 'timestamp does not match expected value'
+    return value
+
+
 def prepare_project_series(project, queryset, start, end, rollup):
     # Fetch the resolved issues.
     resolved_issue_ids = queryset.filter(
@@ -133,18 +139,12 @@ def prepare_project_series(project, queryset, start, end, rollup):
 
     series = []
     for i, timestamp in enumerate(timestamps):
-        total_event_series_item = total_event_series[i]
-        assert total_event_series_item[0] == timestamp
-
-        resolved_event_series_item = resolved_event_series[i]
-        assert resolved_event_series_item[0] == timestamp
-
         series.append(
             ReportSeriesItem(
                 timestamp,
                 ReportSeriesStatistics(
-                    resolved_event_series_item[1],
-                    total_event_series_item[1],
+                    get_series_value(resolved_event_series, i, timestamp),
+                    get_series_value(total_event_series, i, timestamp),
                 ),
             )
         )
