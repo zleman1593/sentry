@@ -102,9 +102,9 @@
         {% for group, statistics in groups %}
           <tr>
             <td>
-              <h5><a>{{ group }}</a></h5>
+              <h5><a href="{% absolute_uri group_link %}">{{ group }}</a></h5>
               <div class="issue-meta">
-                <a class="issue-project">Project Name</a>
+                <a href="{% absolute_uri project_link %}" class="issue-project">{{ group.project.name }}</a>
               </div>
             </td>
             <td class="narrow-column">{{ statistics.count }}</td>
