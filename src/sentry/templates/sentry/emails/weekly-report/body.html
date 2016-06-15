@@ -61,11 +61,25 @@
         </table>
       </td>
       <td class="issues-resolved-column issues-resolved-column-middle">
-        <div class="stat">{{ change.weekly|absolute_value|floatformat:"0" }}%</div>
+        <div class="stat">
+          {% if change.weekly >= 0 %}
+            <img src="{% absolute_asset_url 'sentry' 'images/email/arrow-increase.png' %}" width="20px" height="10px">
+          {% else %}
+            <img src="{% absolute_asset_url 'sentry' 'images/email/arrow-decrease.png' %}" width="20px" height="10px">
+          {% endif %}
+          {{ change.weekly|absolute_value|floatformat:"0" }}%
+        </div>
         <small>{% if change.weekly >= 0 %}more{% else %}less{% endif %} than last week</small>
       </td>
       <td class="issues-resolved-column">
-        <div class="stat">{{ change.monthly|absolute_value|floatformat:"0" }}%</div>
+        <div class="stat">
+          {% if change.monthly >= 0 %}
+            <img src="{% absolute_asset_url 'sentry' 'images/email/arrow-increase.png' %}" width="20px" height="10px">
+          {% else %}
+            <img src="{% absolute_asset_url 'sentry' 'images/email/arrow-decrease.png' %}" width="20px" height="10px">
+          {% endif %}
+          {{ change.monthly|absolute_value|floatformat:"0" }}%
+        </div>
         <small>{% if change.monthly >= 0 %}more{% else %}less{% endif %} than last month's average</small>
       </td>
     </tr>
