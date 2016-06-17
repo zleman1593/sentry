@@ -34,7 +34,9 @@ def merge_series(function, target, other):
 
     def merge_point(left, right):
         # type: (Tuple[Timestamp, T], Tuple[Timestamp, T]) -> Tuple[Timestamp, V]
+        # TODO: ``type`` above can actually be a union with ``missing``.
+        assert left is not missing and right is not missing, 'series are not same length'
         assert left[0] == right[0], 'timestamps must match'
         return (left[0], function(left[1], right[1]))
 
-    return [merge_point(*items) for items in itertools.izip_longest(target, other)]
+    return [merge_point(*items) for items in itertools.izip_longest(target, other, fillvalue=missing)]

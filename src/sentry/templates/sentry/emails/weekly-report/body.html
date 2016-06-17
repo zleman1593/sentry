@@ -42,6 +42,7 @@
       <td class="issues-resolved-column issues-resolved-column-left">
         <table class="issue-graph">
           <tr>
+          {% comment %}
           {% for timestamp, metrics in report.statistics.series %}
             {% with metrics.total|subtract:metrics.resolved as metrics_difference %}
             <td valign="bottom" style="padding-right: 5px;">
@@ -56,13 +57,14 @@
             </td>
             {% endwith %}
           {% endfor %}
+          {% endcomment %}
           </tr>
         </table>
       </td>
-      {% with report.statistics.history as history %}
+      {% with report.statistics.aggregates as aggregates %}
       <td class="issues-resolved-column issues-resolved-column-middle">
         <div class="stat">
-          {% percent history.this_week_sum|subtract:history.last_week_sum history.last_week_sum varname="change" %}
+          {% percent aggregates.this_week|subtract:aggregates.last_week aggregates.last_week varname="change" %}
           {% if change >= 0 %}
             <img src="{% absolute_asset_url 'sentry' 'images/email/arrow-increase.png' %}" width="20px" height="10px">
           {% else %}
@@ -74,7 +76,7 @@
       </td>
       <td class="issues-resolved-column">
         <div class="stat">
-          {% percent history.this_week_sum|subtract:history.month_average_week_sum history.month_average_week_sum varname="change" %}
+          {% percent aggregates.this_week|subtract:aggregates.this_month aggregates.this_month varname="change" %}
           {% if change >= 0 %}
             <img src="{% absolute_asset_url 'sentry' 'images/email/arrow-increase.png' %}" width="20px" height="10px">
           {% else %}

@@ -18,6 +18,8 @@ from sentry.models import (  # type: ignore
 from sentry.reports.builder import (
     issue_list_specifications,
     sort_and_truncate_issues,
+    get_series_generators,
+    get_aggregation_periods,
 )
 from sentry.reports.types import (
     Interval,
@@ -25,15 +27,14 @@ from sentry.reports.types import (
     IssueStatistics,
     IssueReference,
     IssueListSpecification,
-    ResolutionHistory,
     Report,
     ReportStatistics,
-    ReportStatisticsItem,
     ScoredIssueList,
     ScoredIssueListItem,
     Timestamp,
     UserStatistics,
 )
+from sentry.utils.dates import to_timestamp  # type: ignore
 
 
 def make_message(random):  # type: (Random) -> str
@@ -51,19 +52,11 @@ def truncate_to_day(datetime):
     return datetime.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def generate_report(organization, random, days=7):
-    # type: (Organization, Random, int) -> Tuple[Report, UserStatistics, Mapping[IssueReference, Group]]
+def generate_report(organization, random):
+    # type: (Organization, Random) -> Tuple[Report, UserStatistics, Mapping[IssueReference, Group]]
 
-    interval = timedelta(hours=24)
     end = truncate_to_day(timezone.now())
-    start = end - (interval * days)
-
-    resolution, timestamps = tsdb.get_optimal_rollup_series(
-        start,
-        end,
-        int(interval.total_seconds())
-    )  # type: Tuple[int, List[Timestamp]]
-    assert resolution == int(interval.total_seconds())
+    interval = Interval(end - timedelta(days=7), end)
 
     team = Team(
         id=1,
@@ -98,6 +91,18 @@ def generate_report(organization, random, days=7):
 
     issue_reference_generator = make_issue_reference_generator()
 
+    def make_series(interval):  # type: (Interval) -> List[Tuple[Timestamp, int]]
+        result = []
+        for i in interval.range(timedelta(days=1)):
+            result.append((to_timestamp(i.start), random.randint(0, int(1e6))))
+        return result
+
+    def make_statistics():  # type: () -> ReportStatistics
+        return ReportStatistics(
+            {k: make_series(interval) for k in get_series_generators(interval)},
+            {k: random.randint(0, 2500) for k in get_aggregation_periods(interval)},
+        )
+
     def make_scored_issue_list_item(specification):
         # type: (IssueListSpecification) -> ScoredIssueListItem
         users = random.randint(0, 2500) if random.random() < 0.8 else 0
@@ -120,39 +125,16 @@ def generate_report(organization, random, days=7):
             sort_and_truncate_issues(specification, issues),
         )
 
-    issues = {}
-    for key, specification in issue_list_specifications.items():
-        issues[specification] = make_scored_issue_list(specification)
-
-    def make_report_statistics_item():  # type: () -> ReportStatisticsItem
-        total = random.randint(0, int(1e6))
-        return ReportStatisticsItem(
-            resolved=int(total * random.random()),
-            total=total,
-        )
-
-    def make_history_series():  # type: () -> ResolutionHistory
-        rollup = 60 * 60 * 24
-        resolution, timestamps = tsdb.get_optimal_rollup_series(
-            end - timedelta(days=7 * 4),
-            end,
-            rollup,
-        )
-        assert resolution == rollup
-        return ResolutionHistory(
-            [(timestamp, random.randint(0, 250)) for timestamp in timestamps]
-        )
+    def make_issue_lists():  # type: () -> Mapping[IssueListSpecification, ScoredIssueList]
+        issues = {}
+        for key, specification in issue_list_specifications.items():
+            issues[specification] = make_scored_issue_list(specification)
+        return issues
 
     report = Report(
-        Interval(start, end),
-        statistics=ReportStatistics(
-            series=[(
-                timestamp,
-                make_report_statistics_item(),
-            ) for timestamp in timestamps],
-            history=make_history_series(),
-        ),
-        issues=issues,
+        interval,
+        make_statistics(),
+        make_issue_lists(),
     )
 
     user_statistics = UserStatistics(

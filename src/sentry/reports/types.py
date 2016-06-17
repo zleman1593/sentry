@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import operator
 
 from typing import (
@@ -13,6 +13,31 @@ from django.db.models.query import Q  # type: ignore
 
 
 Timestamp = int
+
+class Interval(object):
+    def __init__(self, start, end):  # type: (datetime, datetime) -> None
+        self.start = start
+        self.end = end
+
+    def __repr__(self):   # type: () -> str
+        return 'Interval({}, {})'.format(self.start, self.end)
+
+    def duration(self):  # type: () -> timedelta
+        return self.end - self.start
+
+    def range(self, step):  #  type: (timedelta) -> List[Interval]
+        steps = self.duration().total_seconds() / step.total_seconds()
+        assert (steps % 1) == 0, 'step must evenly divide interval duration'
+        results = []
+        for i in xrange(0, int(steps)):
+            results.append(
+                Interval(
+                    self.start + (step * i),
+                    self.start + (step * (i + 1)),
+                )
+            )
+        return results
+
 
 IssueListScore = float
 
@@ -37,7 +62,7 @@ ScoredIssueListItem = Tuple[
 
 IssueListSpecification = NamedTuple('IssueListSpecification', [
     ('label', unicode),
-    ('filter_factory', Callable[[datetime, datetime], Q]),
+    ('filter_factory', Callable[[Interval], Q]),
     ('score', Callable[[IssueListItem], IssueListScore]),
     ('limit', int),
 ])
@@ -47,46 +72,9 @@ ScoredIssueList = NamedTuple('ScoredIssueList', [
     ('issues', List[ScoredIssueListItem]),
 ])
 
-ReportStatisticsItem = NamedTuple('ReportStatisticsItem', [
-    ('resolved', long),
-    ('total', long),
-])
-
-# TODO: This could probably be a generic Series fairly easily.
-# TODO: Double check all of this math, ... it's easy to get wrong.
-class ResolutionHistory(List[Tuple[Timestamp, long]]):
-    def this_week_sum(self):
-        return sum(value for (timestamp, value) in self[-7:])
-
-    def last_week_sum(self):
-        return sum(value for (timestamp, value) in self[-14:-7])
-
-    def month_average_week_sum(self):
-        return sum(value for (timestamp, value) in self) / 4
-
-
-BaseReportStatistics = NamedTuple('BaseReportStatistics', [
-    ('series', List[
-        Tuple[
-            Timestamp,
-            ReportStatisticsItem,
-        ],
-    ]),
-    ('history', ResolutionHistory),
-])
-
-class ReportStatistics(BaseReportStatistics):
-    # NOTE: Need to find a better way to represent multi-dimensional series so
-    # that these hacks aren't necessary.
-    def total_max(self):  # type: () -> long
-        return max(item.total for (timestamp, item) in self.series)
-
-    def resolved_sum(self):
-        return sum(item.resolved for (timestamp, item) in self.series)
-
-Interval = NamedTuple('Interval', [
-    ('start', datetime),
-    ('end', datetime),
+ReportStatistics = NamedTuple('ReportStatistics', [
+    ('series', Mapping[str, List[Tuple[Timestamp, long]]]),
+    ('aggregates', Mapping[str, long]),
 ])
 
 Report = NamedTuple('Report', [

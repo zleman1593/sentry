@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 
 from typing import (
     cast,
+    Callable,
+    Dict,
     Mapping,
     Optional,
     Tuple,
@@ -32,8 +34,6 @@ from sentry.reports.types import (
     IssueListScore,
     Report,
     ReportStatistics,
-    ReportStatisticsItem,
-    ResolutionHistory,
     ScoredIssueList,
     ScoredIssueListItem,
     Timestamp,
@@ -43,6 +43,7 @@ from sentry.reports.utilities import (
     merge_mappings,
     merge_series,
 )
+from sentry.utils.dates import to_timestamp  # type: ignore
 
 
 def simple_score((issue, statistics)):  # type: (IssueListItem) -> IssueListScore
@@ -52,28 +53,28 @@ def simple_score((issue, statistics)):  # type: (IssueListItem) -> IssueListScor
 issue_list_specifications = {
     'new': IssueListSpecification(
         "New Issues",
-        lambda start, end: Q(
-            first_seen__gte=start,
-            first_seen__lt=end
+        lambda interval: Q(
+            first_seen__gte=interval.start,
+            first_seen__lt=interval.end,
         ),
         score=simple_score,
         limit=5,
     ),
     'reopened': IssueListSpecification(
         "Reintroduced Issues",
-        lambda start, end: Q(
+        lambda interval: Q(
             status=GroupStatus.UNRESOLVED,
-            resolved_at__gte=start,
-            resolved_at__lt=end,
+            resolved_at__gte=interval.start,
+            resolved_at__lt=interval.end,
         ),  # TODO: Is this safe?
         score=simple_score,
         limit=5,
     ),
     'most-seen': IssueListSpecification(
         "Most Seen Issues",
-        lambda start, end: Q(
-            last_seen__gte=start,
-            last_seen__lt=end,
+        lambda interval: Q(
+            last_seen__gte=interval.start,
+            last_seen__lt=interval.end,
         ),  # XXX: This might be very large, it might make sense to start sketching this?
         score=simple_score,
         limit=5,
@@ -94,20 +95,6 @@ def merge_reports(target, other):
     # type: (Report, Report) -> Report
     assert target.interval == other.interval, 'report intervals must match'
 
-    def merge_report_statistics_item(left, right):
-        # type: (Optional[ReportStatisticsItem], Optional[ReportStatisticsItem]) -> Optional[ReportStatisticsItem]
-        if left is None and right is None:
-            return None
-        elif left is None:
-            return right
-        elif right is None:
-            return left
-        else:
-            return ReportStatisticsItem(
-                left.resolved + right.resolved,
-                left.total + right.total,
-            )
-
     def merge_scored_issue_lists(specification, left, right):
         # type: (IssueListSpecification, ScoredIssueList, ScoredIssueList) -> ScoredIssueList
         return ScoredIssueList(
@@ -115,15 +102,30 @@ def merge_reports(target, other):
             sort_and_truncate_issues(specification, left.issues + right.issues),
         )
 
+    def merge_report_statistics(left, right):
+        # type: (ReportStatistics, ReportStatistics) -> ReportStatistics
+        return ReportStatistics(
+            merge_mappings(
+                lambda key, left, right: merge_series(
+                    operator.add,
+                    left,
+                    right,
+                ),
+                left.series,
+                right.series,
+            ),
+            merge_mappings(
+                lambda key, left, right: left + right,
+                left.aggregates,
+                right.aggregates,
+            ),
+        )
+
     return Report(
         target.interval,
-        ReportStatistics(
-            merge_series(
-                merge_report_statistics_item,
-                target.statistics.series,
-                other.statistics.series,
-            ),
-            ResolutionHistory(),
+        merge_report_statistics(
+            target.statistics,
+            other.statistics,
         ),
         merge_mappings(
             merge_scored_issue_lists,
@@ -133,67 +135,26 @@ def merge_reports(target, other):
     )
 
 
-def prepare_project_series(project, queryset, start, end, rollup):
-    # type: (Project, QuerySet, datetime, datetime, int) -> List[Tuple[Timestamp, ReportStatisticsItem]]
-    # Fetch the resolved issues.
-    resolved_issue_ids = queryset.filter(
-        status=GroupStatus.RESOLVED,
-        resolved_at__gte=start,
-        resolved_at__lt=end,
-    ).values_list('id', flat=True)
-
-    resolution, timestamps = tsdb.get_optimal_rollup_series(start, end, rollup)
-    assert resolution == rollup, 'series resolution does not match requested rollup duration'
-
-    # Fetch the series data for the number of times each resolved issue was seen.
-    resolved_event_series = reduce(
-        lambda left, right: merge_series(operator.add, left, right),
-        tsdb.get_range(
-            tsdb.models.group,
-            resolved_issue_ids,
-            start,
-            end,
-            rollup
-        ).values(),  # type: List[List[Tuple[int, int]]]
-        [(timestamp, 0) for timestamp in timestamps],
-    )
-
-    # Fetch the series data for the number of times any issue on the project was seen.
-    total_event_series = tsdb.get_range(
-        tsdb.models.project,
-        (project.id,),
-        start,
-        end,
-        rollup,
-    ).get(project.id, [])  # type: List[Tuple[int, int]]
-
-    return merge_series(
-        ReportStatisticsItem,
-        resolved_event_series,
-        total_event_series,
-    )
-
-
-def prepare_project_issue_list(specification, queryset, start, end, rollup):
-    # type: (IssueListSpecification, Project, datetime, datetime, int) -> ScoredIssueList
+def prepare_project_issue_list(specification, queryset, interval, rollup):
+    # type: (IssueListSpecification, Project, Interval, int) -> ScoredIssueList
     # Fetch all of the groups IDs that meet this constraint.
     issue_id_list = queryset.filter(
-        specification.filter_factory(start, end)
+        specification.filter_factory(interval)
     ).values_list('id', flat=True)
 
     issue_events = tsdb.get_sums(
         tsdb.models.group,
         issue_id_list,
-        start,
-        end,
+        interval.start,
+        interval.end,
         rollup,
     )  # type: Mapping[int, int]
 
     issue_users = tsdb.get_distinct_counts_totals(
         tsdb.models.users_affected_by_group,
         issue_id_list,
-        start,
-        end,
+        interval.start,
+        interval.end,
         rollup,
     )  # type: Mapping[int, int]
 
@@ -220,44 +181,121 @@ def prepare_project_issue_list(specification, queryset, start, end, rollup):
     )
 
 
-# TODO: Drop the period argument and ake this only for weekly reports.
-def prepare_project_report(project, end, period):
-    # type: (Project, datetime, timedelta) -> Report
-    queryset = project.group_set.exclude(status=GroupStatus.MUTED)
+def get_aggregation_periods(interval):  # type: (Interval) -> Mapping[str, Interval]
+    return {
+        'this_week': interval,
+        'last_week': Interval(
+            interval.start - timedelta(days=7),
+            interval.end - timedelta(days=7),
+        ),
+        'this_month': Interval(
+            interval.end - timedelta(days=7 * 4),
+            interval.end,
+        ),
+    }
 
-    start = end - period
-    rollup = int(period.total_seconds() / 7)
+
+def closed_range(series):
+    # XXX: This is a temporary hack and should be implemented more intelligently!
+    return series[:-1]
+
+
+def get_resolved_issue_queryset(queryset, interval):
+    # type: (QuerySet, Interval) -> QuerySet
+    return queryset.filter(
+        status=GroupStatus.RESOLVED,
+        resolved_at__gte=interval.start,
+        resolved_at__lt=interval.end,
+    )
+
+
+def get_series_generators(interval):
+    # type: (Interval) -> Mapping[str, Callable[[Project], List[Tuple[Timestamp, int]]]]
+    rollup = 60 * 60 * 24
+    return {
+        "resolved": lambda project: reduce(
+            lambda left, right: merge_series(operator.add, left, right),
+            map(
+                closed_range,
+                tsdb.get_range(
+                    tsdb.models.group,
+                    get_resolved_issue_queryset(
+                        project.group_set.all(),
+                        interval,
+                    ).values_list('id', flat=True),
+                    interval.start,
+                    interval.end,
+                    rollup
+                ).values(),
+            ),
+            [(to_timestamp(i.start), 0) for i in interval.range(timedelta(seconds=rollup))],
+        ),
+        "total": lambda project: closed_range(
+            tsdb.get_range(
+                tsdb.models.project,
+                (project.id,),
+                interval.start,
+                interval.end,
+                rollup,
+            ).get(project.id, []),
+        )
+    }
+
+
+def prepare_project_statistics(project, interval, queryset, rollup):
+    # type: (Project, Interval, QuerySet, int) -> ReportStatistics
+    """
+    Prepares a project's report statistics.
+    """
+    # Fetch the series data for the project for the report duration.
+    # TODO: Normalize these series keys! (Some of them are returned as floats.)
+    series = {k: fetch(project) for k, fetch in get_series_generators(interval).items()}
+
+    # Fetch the history data for the project for the given durations.
+    aggregate_results = cast(Dict[str, long], {})
+    for key, i in get_aggregation_periods(interval).items():
+        aggregate_results[key] = get_resolved_issue_queryset(queryset, i).count()
+
+    return ReportStatistics(
+        series,
+        aggregate_results,
+    )
+
+
+def prepare_project_report(project, interval, rollup):
+    # type: (Project, Interval, int) -> Report
+    """
+    Prepares a project's report.
+    """
+    assert (interval.duration().total_seconds() / rollup % 1) == 0, \
+            'rollup must divide interval duration without remainder'
+
+    # We don't need to include muted groups in the report, so filter them here.
+    queryset = project.group_set.exclude(status=GroupStatus.MUTED)
 
     issue_lists = {}
     for key, specification in issue_list_specifications.items():
         issue_lists[specification] = prepare_project_issue_list(
             specification,
             queryset,
-            start,
-            end,
+            interval,
             rollup,
         )
 
-    # TODO: Store this series data somewhere for later querying to build
-    # history.
-    series = prepare_project_series(project, queryset, start, end, rollup)
-
-    # TODO: Load me from wherever the history data was stored above.
-    # TODO: Need to assert this is 7 * 4 (or less.)
-    history = ResolutionHistory()
-
     return Report(
-        Interval(start, end),
-        ReportStatistics(
-            series,
-            history,
+        interval,
+        prepare_project_statistics(
+            project,
+            interval,
+            queryset,
+            rollup,
         ),
         issue_lists,
     )
 
 
-def prepare_user_statistics(organization, user, start, end, rollup):
-    # type: (Organization, User, datetime, datetime, int) -> UserStatistics
+def prepare_user_statistics(organization, user, interval, rollup):
+    # type: (Organization, User, Interval, int) -> UserStatistics
     resolved_issue_ids = Activity.objects.filter(
         project__organization_id=organization.id,
         user_id=user.id,
@@ -265,8 +303,8 @@ def prepare_user_statistics(organization, user, start, end, rollup):
             Activity.SET_RESOLVED,
             Activity.SET_RESOLVED_IN_RELEASE,
         ),
-        datetime__gte=start,
-        datetime__lt=end,
+        datetime__gte=interval.start,
+        datetime__lt=interval.end,
         group__status=GroupStatus.RESOLVED,  # only count if the issue is still resolved
     ).values_list('group_id', flat=True)
 
@@ -275,8 +313,8 @@ def prepare_user_statistics(organization, user, start, end, rollup):
         tsdb.get_distinct_counts_union(
             tsdb.models.users_affected_by_group,
             resolved_issue_ids,
-            start,
-            end,
+            interval.start,
+            interval.end,
             rollup,
         ),
     )
