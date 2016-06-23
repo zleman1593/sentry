@@ -43,3 +43,9 @@ search = get_instance(settings.SENTRY_SEARCH, settings.SENTRY_SEARCH_OPTIONS)
 tsdb = get_instance(settings.SENTRY_TSDB, settings.SENTRY_TSDB_OPTIONS)
 raven = client
 locks = LockManager(RedisLockBackend(redis.clusters.get('default')))
+
+from sentry.reports.manager import ReportManager
+
+reports = ReportManager(
+    get_instance('sentry.reports.backends.redis.RedisBackend', {})
+)

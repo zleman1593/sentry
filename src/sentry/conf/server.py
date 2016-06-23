@@ -432,6 +432,8 @@ def create_partitioned_queues(name):
 create_partitioned_queues('counters')
 create_partitioned_queues('triggers')
 
+from celery.schedules import crontab
+
 CELERYBEAT_SCHEDULE_FILENAME = os.path.join(tempfile.gettempdir(), 'sentry-celerybeat')
 CELERYBEAT_SCHEDULE = {
     'check-auth': {
@@ -506,6 +508,20 @@ CELERYBEAT_SCHEDULE = {
         'schedule': timedelta(minutes=15),
         'options': {
             'expires': 60 * 25,
+        },
+    },
+    'schedule-weekly-organization-reports': {
+        'task': 'sentry.tasks.reports.schedule_organization_reports',
+        'schedule': crontab(
+            minute=0,
+            hour=12,  # 05:00 PDT, 09:00 EDT, 12:00 UTC
+            day_of_week='monday',
+        ),
+        'kwargs': {
+            'period': 60 * 60 * 24 * 7,
+        },
+        'options': {
+            'expires': 60 * 60 * 24 * 7,
         },
     },
 }
