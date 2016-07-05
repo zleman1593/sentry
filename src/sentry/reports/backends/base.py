@@ -33,8 +33,10 @@ class Backend(object):
 
         Storing both the reports and the task set is performed as an atomic
         operation. If either the report or task set already exists, this
-        operation will be error.
+        operation will error.
         """
+        # TODO: The error raised when this data is already stored should be
+        # defined more closely than "will error."
         raise NotImplementedError
 
     def fetch(self, key, projects, task):
