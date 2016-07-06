@@ -521,7 +521,7 @@ CELERYBEAT_SCHEDULE = {
             'period': 60 * 60 * 24 * 7,
         },
         'options': {
-            'expires': 60 * 60 * 24 * 7,
+            'expires': 60 * 60 * 3,
         },
     },
 }
