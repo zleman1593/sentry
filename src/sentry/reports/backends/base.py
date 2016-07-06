@@ -17,6 +17,10 @@ from sentry.reports.types import (
 Key = Tuple[Interval, Organization]
 
 
+class InvalidStateError(Exception):
+    pass
+
+
 class InvalidTaskError(Exception):
     pass
 
@@ -33,10 +37,8 @@ class Backend(object):
 
         Storing both the reports and the task set is performed as an atomic
         operation. If either the report or task set already exists, this
-        operation will error.
+        operation will raise an ``InvalidStateError``.
         """
-        # TODO: The error raised when this data is already stored should be
-        # defined more closely than "will error."
         raise NotImplementedError
 
     def fetch(self, key, projects, task):

@@ -1,12 +1,17 @@
+from __future__ import absolute_import
+
 from typing import (
     Mapping,
     Sequence,
     Tuple,
 )
 
+from redis.exceptions import ResponseError
+
 from sentry.models import Project  # type: ignore
 from sentry.reports.backends.base import (
     Backend,
+    InvalidStateError,
     InvalidTaskError,
     Key,
 )
@@ -80,7 +85,13 @@ class RedisBackend(Backend):
                 for k in keys:
                     pipeline.expire(k, self.ttl)
 
-            pipeline.execute()
+            try:
+                pipeline.execute()
+            except ResponseError as error:
+                if error.message.startswith('keys exist:'):
+                    raise InvalidStateError()  # TODO: Improve messaging here.
+                else:
+                    raise
 
     def fetch(self, key, projects, task):
         # type: (Key, Sequence[Project], str) -> Sequence[Report]

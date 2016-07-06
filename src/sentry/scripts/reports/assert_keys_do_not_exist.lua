@@ -9,7 +9,7 @@ end
 if #existing > 0 then
     return redis.error_reply(
         string.format(
-            "keys exist: %s",
+            "keys exist: %s",  -- XXX: this string is used to identify the specific error in Python
             table.concat(existing, ", ")
         ))
 else
