@@ -14,6 +14,7 @@ from sentry.reports.types import (
     Interval,
     Timestamp,
 )
+from sentry.utils.dates import to_timestamp  # type: ignore
 
 
 K = TypeVar('K')
@@ -38,6 +39,20 @@ def merge_series(target, other, function=operator.add):
         assert left is not missing and right is not missing, 'series must be same length'
         assert left[0] == right[0], 'timestamps do not match'
         result.append((left[0], function(left[1], right[1])))
+    return result
+
+
+def trim_series(resolution, interval, series):
+    # type: (int, Interval, Sequence[Tuple[Timestamp, T]]) -> Sequence[Tuple[Timestamp, T]]
+    """
+    """
+    result = []
+    start, stop = map(to_timestamp, interval)
+    for i, (timestamp, value) in enumerate(series):
+        assert timestamp == start + (resolution * i), 'received unexpected timestamp'
+        if timestamp >= stop:
+            break
+        result.append((timestamp, value))
     return result
 
 

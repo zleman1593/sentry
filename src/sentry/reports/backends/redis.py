@@ -55,9 +55,9 @@ class RedisBackend(Backend):
         else:
             return key
 
-    def store(self, key, reports, tasks):
-        # type: (Key, Mapping[Project, Report], Sequence[str]) -> None
-        if not tasks:
+    def store(self, key, reports, tasks, force=False):
+        # type: (Key, Mapping[Project, Report], Sequence[str], bool) -> None
+        if not force and not tasks:
             return
 
         keys = (
@@ -65,7 +65,10 @@ class RedisBackend(Backend):
             self.__make_key(key, 't'),
         )
         with self.__get_client(key).pipeline(transaction=True) as pipeline:
-            assert_keys_do_not_exist(pipeline, keys)
+            if not force:
+                assert_keys_do_not_exist(pipeline, keys, ())
+            else:
+                pipeline.delete(*keys)
 
             pipeline.hmset(
                 self.__make_key(key, 'r'),

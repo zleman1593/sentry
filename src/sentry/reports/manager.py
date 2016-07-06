@@ -1,3 +1,4 @@
+import functools
 from datetime import timedelta
 
 from django.db.models import Q  # type: ignore
@@ -6,6 +7,7 @@ from typing import (
     Dict,
     Mapping,
     NamedTuple,
+    Optional,
     Sequence,
     Tuple,
 )
@@ -33,6 +35,7 @@ from sentry.reports.utilities import (
     get_empty_series,
     merge_mapping,
     merge_series,
+    trim_series,
 )
 
 
@@ -138,17 +141,20 @@ DEFAULT_SERIES = {
     )[project.id],
     'resolved': lambda interval, project, rollup: reduce(
         merge_series,
-        tsdb.get_range(
-            tsdb.models.group,
-            project.group_set.filter(
-                status=GroupStatus.RESOLVED,
-                resolved_at__gte=interval.start,
-                resolved_at__lt=interval.stop,
-            ).values_list('id', flat=True),
-            interval.start,
-            interval.stop,
-            rollup=rollup,
-        ).values(),
+        map(
+            functools.partial(trim_series, rollup, interval),
+            tsdb.get_range(
+                tsdb.models.group,
+                project.group_set.filter(
+                    status=GroupStatus.RESOLVED,
+                    resolved_at__gte=interval.start,
+                    resolved_at__lt=interval.stop,
+                ).values_list('id', flat=True),
+                interval.start,
+                interval.stop,
+                rollup=rollup,
+            ).values(),
+        ),
         get_empty_series(interval, rollup, lambda timestamp: 0),
     )
 }
@@ -229,7 +235,7 @@ class ReportManager(object):
                     series,
                     lambda item, value: update_item(key, item, value)
                 ),
-                {key: fetch(interval, project, rollup) for key, fetch in self.series.items()}.items(),
+                {key: trim_series(rollup, interval, fetch(interval, project, rollup)) for key, fetch in self.series.items()}.items(),
                 get_empty_series(interval, rollup, lambda timestamp: {}),
             )
 
@@ -266,25 +272,43 @@ class ReportManager(object):
             ),
         )
 
-    def prepare_organization_reports(self, interval, organization):
-        # type: (Interval, Organization) -> Sequence[str]
+    def prepare_organization_reports(self, interval, organization, force=False):
+        # type: (Interval, Organization, bool) -> Sequence[str]
         """
+        Prepare the reports for all projects in an organization and store them
+        in the report backend.
         """
+        # TODO: Probably add a note here on failure conditions from backend.
+
+        # TODO: This should perform the key existence checks first as a
+        # safeguard when not running with ``force`` to avoid potentially
+        # expensive computation here, probably.
         reports = {}
         for project in organization.project_set.filter(status=ProjectStatus.VISIBLE):
             reports[project] = self.prepare_project_report(interval, organization, project)
 
         users = map(str, organization.member_set.values_list('id', flat=True))
-        self.backend.store((interval, organization), reports, users)
+        self.backend.store((interval, organization), reports, users, force)
         return users
 
-    def build_report_message(self, interval, organization, user, projects):
+    def build_report_message(self, interval, organization, user):
         # XXX: late import to avoid circular import breaks type annotation for this method
         from sentry.utils.email import MessageBuilder  # type: ignore
-        # type: (Interval, Organization, User, Sequence[Project]) -> MessageBuilder
+        # type: (Interval, Organization, User) -> Optional[MessageBuilder]
         """
         Build a report mesage for a user.
         """
+        # TODO: Probably add a note here on failure conditions from backend.
+
+        # Fetch all the projects that this user has access to.
+        projects = list()  # type: List[Project]
+        for team in Team.objects.get_for_user(organization, user):
+            projects.extend(Project.objects.get_for_user(team, user, _skip_team_check=True))
+
+        # If there aren't any projects, there is no report to send.
+        if not projects:
+            return
+
         # Fetch all of the reports for the projects this user has access to and
         # merge them into a single report.
         report = reduce(
@@ -307,17 +331,8 @@ class ReportManager(object):
         """
         Build and deliver a report to a user.
         """
-        # Fetch all the projects that this user has access to.
-        projects = list()  # type: List[Project]
-        for team in Team.objects.get_for_user(organization, user):
-            projects.extend(Project.objects.get_for_user(team, user, _skip_team_check=True))
-
-        if projects:
-            self.build_report_message(
-                interval,
-                organization,
-                user,
-                projects,
-            ).send()
+        message = self.build_report_message(interval, organization, user)
+        if message is not None:
+            message.send()
 
         self.backend.commit((interval, organization), str(user.id))
