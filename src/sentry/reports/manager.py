@@ -3,8 +3,10 @@ from datetime import timedelta
 
 from django.db.models import Q  # type: ignore
 from typing import (
+    cast,
     Callable,
     Dict,
+    List,
     Mapping,
     NamedTuple,
     Optional,
@@ -22,6 +24,7 @@ from sentry.models import (  # type: ignore
     Team,
     User,
 )
+from sentry.reports.backends.base import Backend
 from sentry.reports.types import (
     Interval,
     IssueList,
@@ -89,6 +92,11 @@ def get_weekly_average(interval, project, rollup):
 
     return sum(partitions) / count
 
+IssueListSpecificationDefinition = Mapping[
+    str,
+    IssueListSpecification,
+]
+
 
 DEFAULT_ISSUE_SPECIFICATIONS = {
     'new': IssueListSpecification(
@@ -115,6 +123,17 @@ DEFAULT_ISSUE_SPECIFICATIONS = {
     ),
 }
 
+AggregateDefinition = Mapping[
+    str,
+    Callable[
+        [
+            Interval,
+            Project,
+            int,
+        ],
+        float,
+    ],
+]
 
 DEFAULT_AGGREGATES = {
     'this-week': lambda interval, project, rollup: project.group_set.filter(
@@ -131,6 +150,18 @@ DEFAULT_AGGREGATES = {
 }
 
 
+SeriesDefinition = Mapping[
+    str,
+    Callable[
+        [
+            Interval,
+            Project,
+            int,
+        ],
+        Sequence[Tuple[Timestamp, float]],
+    ],
+]
+
 DEFAULT_SERIES = {
     'total': lambda interval, project, rollup: tsdb.get_range(
         tsdb.models.project,
@@ -142,7 +173,7 @@ DEFAULT_SERIES = {
     'resolved': lambda interval, project, rollup: reduce(
         merge_series,
         map(
-            functools.partial(trim_series, rollup, interval),
+            lambda series: trim_series(rollup, interval, series),
             tsdb.get_range(
                 tsdb.models.group,
                 project.group_set.filter(
@@ -159,6 +190,18 @@ DEFAULT_SERIES = {
     )
 }
 
+
+IssueStatisticsDefinition = Mapping[
+    str,
+    Callable[
+        [
+            Interval,
+            Sequence[int],
+            int,
+        ],
+        Mapping[int, float],
+    ]
+]
 
 DEFAULT_ISSUE_STATISTICS = {
     'events': lambda interval, keys, rollup: tsdb.get_sums(
@@ -187,6 +230,7 @@ class ReportManager(object):
         series=DEFAULT_SERIES,
         issue_statistics=DEFAULT_ISSUE_STATISTICS
     ):
+        # type: (Backend, IssueListSpecificationDefinition, AggregateDefinition, SeriesDefinition, IssueStatisticsDefinition) -> None
         self.backend = backend
         self.specifications = specifications
         self.aggregates = aggregates

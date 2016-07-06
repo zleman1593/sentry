@@ -2,10 +2,12 @@ from __future__ import absolute_import
 
 from typing import (
     Mapping,
+    Optional,
     Sequence,
     Tuple,
 )
 
+from rb.clients import LocalClient  # type: ignore
 from redis.exceptions import ResponseError
 
 from sentry.models import Project  # type: ignore
@@ -38,13 +40,15 @@ class RedisBackend(Backend):
     tasks IDs that have yet to process the reports. These keys are colocated
     (so that they can be accessed atomically) by the report's ``Key``.
     """
-    def __init__(self, **options):
-        self.cluster = clusters.get(options.get('cluster', 'default'))
-        self.ttl = options.get('ttl')
+    def __init__(self, cluster='default', ttl=None):
+        # type: (str, Optional[int]) -> None
+        self.cluster = clusters.get(cluster)
+        self.ttl = ttl
 
         self.codec = Codec()
 
     def __get_client(self, key):
+        # type: (Key) -> LocalClient
         return self.cluster.get_local_client_for_key(self.__make_key(key))
 
     def __make_key(self, (interval, organization), suffix=None):

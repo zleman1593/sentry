@@ -29,8 +29,8 @@ class Backend(object):
     """
     Provides intermediate storage for reports as they are processed.
     """
-    def store(self, key, reports, tasks):
-        # type: (Key, Mapping[Project, Report], Sequence[str]) -> None
+    def store(self, key, reports, tasks, force=False):
+        # type: (Key, Mapping[Project, Report], Sequence[str], bool) -> None
         """
         Store a collection of reports for projects, as well as a collection of
         tasks IDs that are expected to read from the report data.
